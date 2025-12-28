@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  localstack:
+    container_name: "${LOCALSTACK_DOCKER_NAME:-localstack-main}"
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      - DEBUG=${DEBUG:-0}
+      - SERVICES=dynamodb
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./init-dynamodb.sh:/etc/localstack/init/ready.d/init-dynamodb.sh"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "awslocal", "dynamodb", "list-tables"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  feedbacks-app:
+    image: quarkus/feedbacks-quarkus-jvm
+    ports:
+      - "8080:8080"
+    depends_on:
+      localstack:
+        condition: service_healthy   # só sobe quando LocalStack estiver pronto
+    environment:
+      - QUARKUS_DYNAMODB_AWS_REGION=us-east-1
+      - QUARKUS_DYNAMODB_AWS_CREDENTIALS_TYPE=static
+      - QUARKUS_DYNAMODB_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID=test
+      - QUARKUS_DYNAMODB_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY=test
+      - QUARKUS_DYNAMODB_ENDPOINT_OVERRIDE=http://localstack:4566
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
